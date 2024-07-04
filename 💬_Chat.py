@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 from typing import Generator
-from langchain.chains import ConversationChain 
+from langchain.chains import ConversationChain
 from langchain_core.messages import SystemMessage
-from langchain.chains.conversation.memory import ConversationBufferWindowMemory  
-from langchain_groq import ChatGroq  
+from langchain.chains.conversation.memory import ConversationBufferWindowMemory
+from langchain_groq import ChatGroq
 from langchain.prompts import HumanMessagePromptTemplate, ChatPromptTemplate
 import qdrant_client as qc
 from qdrant_client.http.models import *
@@ -16,46 +16,64 @@ import logging
 from ts_questionaire import *
 from data.prompts import evaluation_prompts
 
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 logger = logging.getLogger()
 logging.basicConfig(level=logging.INFO)
 evaluation_mode = False
 
+
 def generate_chat_responses(chat_completion) -> Generator[str, None, None]:
-        """Yield chat response content from the Groq API response."""
-        for chunk in chat_completion:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+    """Yield chat response content from the Groq API response."""
+    for chunk in chat_completion:
+        if chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content
+
 
 def get_response_given_dict(raw_llm_output: dict) -> str:
     """Extract the response from the Groq API output using the full chain"""
     return raw_llm_output["response"]
 
+
 def main():
 
-    qdrant_client = qc.QdrantClient(st.secrets['QDRANT_CLIENT_URL'], api_key=st.secrets['QDRANT_API_KEY'])
-    collection_name = 'Taylor_Song_DataBase_full_lyrics'
-    grade_collection_name = 'Grades_collection'
+    qdrant_client = qc.QdrantClient(
+        st.secrets["QDRANT_CLIENT_URL"], api_key=st.secrets["QDRANT_API_KEY"]
+    )
+    collection_name = "Taylor_Song_DataBase_full_lyrics"
+    grade_collection_name = "Grades_collection"
 
-    embed_model_id = 'sentence-transformers/all-MiniLM-L6-v2'
+    embed_model_id = "sentence-transformers/all-MiniLM-L6-v2"
 
-    device = f'cuda:{cuda.current_device()}' if cuda.is_available() else 'cpu'
+    device = f"cuda:{cuda.current_device()}" if cuda.is_available() else "cpu"
 
     embed_model = HuggingFaceEmbeddings(
         model_name=embed_model_id,
-        model_kwargs={'device': device},
-        encode_kwargs={'device': device}
+        model_kwargs={"device": device},
+        encode_kwargs={"device": device},
     )
-    
-    criteria = ['feelings of self', 'glass half full', 'stages of depression', 'tempo', 'seriousness', 'future prospects', 'feeling of male', 'togetherness']
 
-    st.set_page_config(page_title="Zihang's Tune", page_icon="🎵")
-    st.title("Zihang's Tune")
+    criteria = [
+        "feelings of self",
+        "glass half full",
+        "stages of depression",
+        "tempo",
+        "seriousness",
+        "future prospects",
+        "feeling of male",
+        "togetherness",
+    ]
 
-    st.image("media/ts-wallpaper.webp")
-    st.subheader("Find the best Zihangs album song based on your mood", divider="rainbow", anchor=False)
+    st.set_page_config(page_title="Follow your mood", page_icon="🎵")
+    st.title("Your music, your mood")
 
-    st.markdown("*Try to explain how do you feel and your relationship status using the chat and the agent will help you finding the most suited Zihang's album songs for you!*")
+    st.image("media/cover.webp")
+    st.subheader(
+        "Find the best song based on your mood", divider="rainbow", anchor=False
+    )
+
+    st.markdown(
+        "*Try to explain how do you feel and your relationship status using the chat and the agent will help you finding the most suitable songs for you!*"
+    )
     # Initialize chat history and selected model
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -65,9 +83,17 @@ def main():
 
     # Define model details
     models = {
-        "mixtral-8x7b-32768": {"name": "Mixtral-8x7b-Instruct-v0.1", "tokens": 32768, "developer": "Mistral"},
-        "llama3-70b-8192": {"name": "llama3-70b-8192", "tokens": 8192, "developer": "Meta"},
-        "gemma-7b-it": {"name": "Gemma-7b-it", "tokens": 8192, "developer": "Google"}
+        "mixtral-8x7b-32768": {
+            "name": "Mixtral-8x7b-Instruct-v0.1",
+            "tokens": 32768,
+            "developer": "Mistral",
+        },
+        "llama3-70b-8192": {
+            "name": "llama3-70b-8192",
+            "tokens": 8192,
+            "developer": "Meta",
+        },
+        "gemma-7b-it": {"name": "Gemma-7b-it", "tokens": 8192, "developer": "Google"},
     }
 
     # Sidebar customization
@@ -75,11 +101,11 @@ def main():
     with st.sidebar:
         # Model selection
         model_option = st.selectbox(
-                "Choose a model:",
-                options=list(models.keys()),
-                format_func=lambda x: models[x]["name"],
-                index=0  # Default to the first model in the list
-            )
+            "Choose a model:",
+            options=list(models.keys()),
+            format_func=lambda x: models[x]["name"],
+            index=0,  # Default to the first model in the list
+        )
 
         # Detect model change and clear chat history if model has changed
         if st.session_state.selected_model != model_option:
@@ -88,16 +114,22 @@ def main():
 
         max_tokens_range = models[model_option]["tokens"]
 
-        qdrant_query_limit = st.slider(min_value=1, max_value=5, value=3, label="Number of song suggestions", help="Select the maximum number of songs that will be suggest based on your mood")
+        qdrant_query_limit = st.slider(
+            min_value=1,
+            max_value=5,
+            value=3,
+            label="Number of song suggestions",
+            help="Select the maximum number of songs that will be suggest based on your mood",
+        )
         # Layout for model selection and max_tokens slider
         col1, col2 = st.columns(2)
-        with col1: 
+        with col1:
             conv_mem_length = st.slider(
                 "Memory Length:",
                 min_value=1,
                 max_value=5,
                 value=1,
-                help="Adjust the conversational memory length for the chatbot. This will affect the context of the conversation."
+                help="Adjust the conversational memory length for the chatbot. This will affect the context of the conversation.",
             )
         with col2:
             # Adjust max_tokens slider dynamically based on the selected model
@@ -108,42 +140,46 @@ def main():
                 # Default value or max allowed if less
                 value=2048,
                 step=512,
-                help=f"Adjust the maximum number of tokens (words) for the model's response. Max for selected model: {max_tokens_range}"
+                help=f"Adjust the maximum number of tokens (words) for the model's response. Max for selected model: {max_tokens_range}",
             )
-        
-        st.button("Clear Chat History", on_click=lambda: [st.session_state.messages.clear(), st.toast('Chat history cleared 🧹')])
+
+        st.button(
+            "Clear Chat History",
+            on_click=lambda: [
+                st.session_state.messages.clear(),
+                st.toast("Chat history cleared 🧹"),
+            ],
+        )
 
     # Initializing conversation memory with the selected length
-    # memory=ConversationBufferWindowMemory(k=conv_mem_length)  
+    # memory=ConversationBufferWindowMemory(k=conv_mem_length)
 
     # session state variable for storing chat history
-    if 'chat_history' not in st.session_state:
-        st.session_state.chat_history=[]  # Initializing chat history if not present
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []  # Initializing chat history if not present
     else:
         # TODO: enable again history
         # for message in st.session_state.chat_history:
         #     memory.chat_memory.add_user_message(message['input'])  # Saving previous chat context to memory
         #     memory.chat_memory.add_ai_message(message['response'])
         pass
-    
-    # Set up the Groq client 
+
+    # Set up the Groq client
     client = ChatGroq(
         api_key=st.secrets["GROQ_API_KEY"],
         model_name=model_option,
-        max_tokens=max_tokens
+        max_tokens=max_tokens,
     )
 
     # Set up conversation chain with memory buffer
     conversation = ConversationChain(
         llm=client,
-        #memory=memory,
+        # memory=memory,
     )
-
-    
 
     # Display chat messages from history on app rerun
     for message in st.session_state.messages:
-        avatar = '🤖' if message["role"] == "assistant" else '👨‍💻'
+        avatar = "🤖" if message["role"] == "assistant" else "👨‍💻"
         with st.chat_message(message["role"], avatar=avatar):
             st.markdown(message["content"])
 
@@ -151,20 +187,21 @@ def main():
     if prompt := st.chat_input("How do you feel today?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
 
-        with st.chat_message("user", avatar='👨‍💻'):
+        with st.chat_message("user", avatar="👨‍💻"):
             st.markdown(prompt)
 
         # Fetch response from Groq API
         try:
             st.toast("Processing your input... 🤖")
             # Define a prompt template with specific task instructions
-            
+
             # PRE-PROMPT 1
-            
+
             prompt_template_score = ChatPromptTemplate.from_messages(
                 [
                     SystemMessage(
-                        content = ("""
+                        content=(
+                            """
 You are an AI assistant that has to complete 2 tasks.
 ---
 Task 1: 
@@ -250,20 +287,21 @@ Do not forget to enclose the criteria list in square brackets. Do not send it as
 The criteria list is: [3, 3, 0, 0, 0, 3, 0, 0]
 - Always report the criteria lists. Do not forget to report it in the proper format.
 - Nothing more than that. Just the score in the format above only. This conversation should not be influenced other questions or prompts.
-                        """)
+                        """
+                        )
                     ),
-                    HumanMessagePromptTemplate.from_template("{text}")
+                    HumanMessagePromptTemplate.from_template("{text}"),
                 ]
             )
 
             if evaluation_mode:
                 prompt_template = evaluation_prompts.evaluation_prompt
-            
+
             # Insert the user input into the prompt template
             human_input = prompt
             prompt_score = prompt_template_score.format_messages(text=human_input)
             # Send the prompt to the conversation chain
-             
+
             message_score = conversation.invoke(prompt_score)
 
             ai_tasks_reply = get_response_given_dict(message_score)
@@ -282,38 +320,57 @@ The criteria list is: [3, 3, 0, 0, 0, 3, 0, 0]
 
             # Remember, it's okay to feel sad and it's okay to hope for something new. Take your time to heal and when you're ready, the right person will come into your life.
 
-
             logger.info(f"Criteria scores from first LLM output: ")
             evaluation_error = False
             try:
-                criterion_grades = [int(x.strip()) for x in ai_tasks_reply.split('[')[1].split(']')[0].split(',')]
+                criterion_grades = [
+                    int(x.strip())
+                    for x in ai_tasks_reply.split("[")[1].split("]")[0].split(",")
+                ]
                 assert len(criterion_grades) == 8, "Criteria list must have length 8"
             except Exception as e:
-                st.toast('An error occurred while processing the user input. Please try again.')
+                st.toast(
+                    "An error occurred while processing the user input. Please try again."
+                )
                 logger.error(f"Error parsing criteria scores: {e}")
                 criterion_grades = [0, 0, 0, 0, 0, 0, 0, 0]
                 evaluation_error = True
-            
+
             if evaluation_mode:
                 try:
-                    questions_grades = [int(x.strip()) for x in ai_tasks_reply.split('{')[1].split('}')[0].split(',')] 
-                    assert len(questions_grades) == 6, "Questions list must have length 8"
+                    questions_grades = [
+                        int(x.strip())
+                        for x in ai_tasks_reply.split("{")[1].split("}")[0].split(",")
+                    ]
+                    assert (
+                        len(questions_grades) == 6
+                    ), "Questions list must have length 8"
                 except Exception as e:
-                    st.toast('An error occurred while processing the user input. Please try again.')
+                    st.toast(
+                        "An error occurred while processing the user input. Please try again."
+                    )
                     logger.error(f"Error parsing questions scores: {e}")
                     questions_grades = [0, 0, 0, 0, 0, 0]
                     evaluation_error = True
-                
-                if criterion_grades == [0, 0, 0, 0, 0, 0, 0, 0] or questions_grades == [0, 0, 0, 0, 0, 0]:
+
+                if criterion_grades == [0, 0, 0, 0, 0, 0, 0, 0] or questions_grades == [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ]:
                     evaluation_error = True
 
             if not evaluation_error:
                 logger.info(f"Criteria grades: {criterion_grades}")
-                if evaluation_mode: logger.info(f"Questions grades: {questions_grades}")
+                if evaluation_mode:
+                    logger.info(f"Questions grades: {questions_grades}")
 
                 if logger.level == logging.DEBUG:
                     for idx, score in enumerate(criterion_grades):
-                        logger.debug(f"{criteria[idx]}: {score}") 
+                        logger.debug(f"{criteria[idx]}: {score}")
                     if evaluation_mode:
                         for idx, score in enumerate(questions_grades):
                             logger.debug(f"Question {idx+1}: {score}")
@@ -322,16 +379,16 @@ The criteria list is: [3, 3, 0, 0, 0, 3, 0, 0]
                 criterion_grades.insert(1, sum(criterion_grades[5:]))
 
                 score_res = qdrant_client.search(
-                    collection_name = grade_collection_name,
-                    query_vector = criterion_grades,
-                    limit=qdrant_query_limit
+                    collection_name=grade_collection_name,
+                    query_vector=criterion_grades,
+                    limit=qdrant_query_limit,
                 )
 
                 query_text = embed_model.embed_documents([human_input])[0]
                 song_res = qdrant_client.search(
-                    collection_name = collection_name,
-                    query_vector = query_text,
-                    limit=qdrant_query_limit
+                    collection_name=collection_name,
+                    query_vector=query_text,
+                    limit=qdrant_query_limit,
                 )
 
                 song_from_scores_db = ""
@@ -350,13 +407,14 @@ The criteria list is: [3, 3, 0, 0, 0, 3, 0, 0]
                     logger.info(f"Predicted songs: {lib_predicted_songs}")
 
                 # Prompt template for the AI response
-                # - Songs retrieved by a statistical model: {lib_predicted_songs}\n. 
-                
+                # - Songs retrieved by a statistical model: {lib_predicted_songs}\n.
+
                 # PRE-PROMPT 2
                 prompt_template = ChatPromptTemplate.from_messages(
                     [
                         SystemMessage(
-                            content = (f"""
+                            content=(
+                                f"""
 You are an AI assistant that has two goals: detecting the user mood and suggest a Taylor Swift song compatible with the user mood.
 First of all you have to highlight a maximum of 5 keywords from the user input.
 Then you have to tell to the user which is the most relevant feeling the user is having.
@@ -382,20 +440,21 @@ Always answer in natural language and avoid to just report the data you have in 
 
 You must not return:
 - Any previous criteria scores or the scores of the questions. Those criteria and questions are only to extract the context from the database and they are not needed for the answer here.
-""")
+"""
+                            )
                         ),
-                        HumanMessagePromptTemplate.from_template("{text}")
+                        HumanMessagePromptTemplate.from_template("{text}"),
                     ]
                 )
-                
+
                 prompt = prompt_template.format_messages(text=prompt)
                 conversation.memory.clear()
                 logger.info(f"PROMPT USING SECOND PREPRPOMPT {prompt}")
                 try:
                     message = conversation.invoke(prompt)
                 except Exception as e:
-                   with st.chat_message("assistant", avatar="🤖"):
-                        st.write(f"High request rate please wait\n{e}") 
+                    with st.chat_message("assistant", avatar="🤖"):
+                        st.write(f"High request rate please wait\n{e}")
                 logger.info(f"AI response DEBUG: {message}")
                 ai_responses = get_response_given_dict(message)
             else:
@@ -403,26 +462,32 @@ You must not return:
                 st.error(ai_responses)
                 st.error("😕 An error occurred while processing the user input.")
             # Store the message in the chat history
-            if not evaluation_error: st.session_state.chat_history.append(message)  
+            if not evaluation_error:
+                st.session_state.chat_history.append(message)
 
             # Use the generator function with st.write_stream
             with st.chat_message("assistant", avatar="🤖"):
-                if not evaluation_error: st.write(ai_responses)
-                else: st.write("Please try to be more clear 😢🙏")
+                if not evaluation_error:
+                    st.write(ai_responses)
+                else:
+                    st.write("Please try to be more clear 😢🙏")
         except Exception as e:
-            st.error(f'{type(e).__name__,}\n{e}', icon="🚨")
-            #conversation.memory.clear()
+            st.error(f"{type(e).__name__,}\n{e}", icon="🚨")
+            # conversation.memory.clear()
 
         # Append the full response to session_state.messages
         if isinstance(ai_responses, str):
             st.session_state.messages.append(
-                {"role": "assistant", "content": ai_responses})
+                {"role": "assistant", "content": ai_responses}
+            )
         else:
             # Handle the case where full_response is not a string
             combined_response = "\n".join(str(item) for item in ai_responses)
-            if not evaluation_error: st.session_state.messages.append(
-                {"role": "assistant", "content": combined_response}) 
-    
-    
+            if not evaluation_error:
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": combined_response}
+                )
+
+
 if __name__ == "__main__":
     main()
