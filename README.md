@@ -33,13 +33,17 @@ To fill the blank in the market, this project aims to develop a chatbot, leverag
 
 ### Download 
 
-```git copy git@github.com:callmeeric5/MusicBot.git```
+```
+git copy git@github.com:callmeeric5/MusicBot.git
+```
 
 ### Prescription
 
 1. Build a Virtual Env if you need
 
-```pip install -r requirements.txt```
+```
+pip install -r requirements.txt
+```
 
 2. Go to https://console.groq.com/playground create a project
 ![](media/groqcloud.png)
@@ -60,14 +64,20 @@ QDRANT_CLIENT_URL =
 
 ### Run in local
 
-```cd MusicBot```
-```streamlit run 💬_Chat.py```
+```
+cd MusicBot
+```
+```
+streamlit run 💬_Chat.py
+```
 
 ### Run in docker
 
-```docker build -t musicbot .```
+```
+docker build -t musicbot .
+docker run -p 8501:8501 musicbot
+```
 
-```docker run -p 8501:8501 musicbot```
 
 ## 🎉Teda!🎉
 
