@@ -1,4 +1,4 @@
-# MusicBot
+# MusicBot Recommendation
 
 ## Intro
 
