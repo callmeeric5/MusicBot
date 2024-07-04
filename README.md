@@ -34,7 +34,7 @@ To fill the blank in the market, this project aims to develop a chatbot, leverag
 ### Download 
 
 ```
-git copy git@github.com:callmeeric5/MusicBot.git
+git clone git@github.com:callmeeric5/MusicBot.git
 ```
 
 ### Prescription
